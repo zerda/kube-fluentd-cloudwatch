@@ -1,0 +1,38 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: fluentd-config
+  namespace: kube-system
+data:
+  containers.input.conf: |-
+    <source>
+      type tail
+      path /var/log/containers/*.log
+      pos_file /var/log/es-containers.log.pos
+      time_format %Y-%m-%dT%H:%M:%S.%NZ
+      tag kubernetes.*
+      format json
+      read_from_head true
+    </source>
+  output.conf: |-
+    # Enriches records with Kubernetes metadata
+    <filter kubernetes.**>
+      type kubernetes_metadata
+    </filter>
+
+    <filter kubernetes.**>
+      @type record_transformer
+      enable_ruby true
+      <record>
+        pod_name ${record.fetch("kubernetes", Hash.new).fetch("pod_name", "unknown_pod")}
+        container_name ${record.fetch("kubernetes", Hash.new).fetch("container_name", "unknown_container")}
+      </record>
+    </filter>
+
+    <match kubernetes.**>
+      @type cloudwatch_logs
+      log_group_name_key pod_name
+      log_stream_name_key container_name
+      auto_create_stream true
+      put_log_events_retry_limit 20
+    </match>
